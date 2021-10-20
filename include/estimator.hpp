@@ -25,21 +25,22 @@
 */
 #pragma once
 
-
 #include <queue>
 #include <deque>
 
 #include "map_manager.hpp"
 #include "optimizer.hpp"
 
-class Estimator {
+class Estimator
+{
 
 public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
     Estimator(std::shared_ptr<SlamParams> pslamstate, std::shared_ptr<MapManager> pmap)
-        : pslamstate_(pslamstate), pmap_(pmap)
-        , poptimizer_( new Optimizer(pslamstate_, pmap_) )
+        : pslamstate_(pslamstate),
+          pmap_(pmap),
+          poptimizer_(new Optimizer(pslamstate_, pmap_))
     {
         std::cout << "\n Estimator Object is created!\n";
     }
@@ -54,7 +55,6 @@ public:
 
     bool getNewKf();
     void addNewKf(const std::shared_ptr<Frame> &pkf);
-
 
     std::shared_ptr<SlamParams> pslamstate_;
     std::shared_ptr<MapManager> pmap_;

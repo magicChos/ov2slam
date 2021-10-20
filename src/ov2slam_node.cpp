@@ -47,20 +47,23 @@
 #include "ov2slam.hpp"
 #include "slam_params.hpp"
 
-
-class SensorsGrabber {
+class SensorsGrabber
+{
 
 public:
-    SensorsGrabber(SlamManager *slam): pslam_(slam) {
+    SensorsGrabber(SlamManager *slam) : pslam_(slam)
+    {
         std::cout << "\nSensors Grabber is created...\n";
     }
 
-    void subLeftImage(const sensor_msgs::ImageConstPtr &image) {
+    void subLeftImage(const sensor_msgs::ImageConstPtr &image)
+    {
         std::lock_guard<std::mutex> lock(img_mutex);
         img0_buf.push(image);
     }
 
-    void subRightImage(const sensor_msgs::ImageConstPtr &image) {
+    void subRightImage(const sensor_msgs::ImageConstPtr &image)
+    {
         std::lock_guard<std::mutex> lock(img_mutex);
         img1_buf.push(image);
     }
@@ -69,10 +72,11 @@ public:
     {
         // Get and prepare images
         cv_bridge::CvImageConstPtr ptr;
-        try {    
+        try
+        {
             ptr = cv_bridge::toCvCopy(img_msg, sensor_msgs::image_encodings::MONO8);
-        } 
-        catch(cv_bridge::Exception &e)
+        }
+        catch (cv_bridge::Exception &e)
         {
             ROS_ERROR("\n\n\ncv_bridge exeception: %s\n\n\n", e.what());
         }
@@ -85,10 +89,11 @@ public:
     void sync_process()
     {
         std::cout << "\nStarting the measurements reader thread!\n";
-        
-        while( !pslam_->bexit_required_ )
+
+        while (!pslam_->bexit_required_)
         {
-            if( pslam_->pslamstate_->stereo_ )
+            // 立体
+            if (pslam_->pslamstate_->stereo_)
             {
                 cv::Mat image0, image1;
 
@@ -100,12 +105,12 @@ public:
                     double time1 = img1_buf.front()->header.stamp.toSec();
 
                     // sync tolerance
-                    if(time0 < time1 - 0.015)
+                    if (time0 < time1 - 0.015)
                     {
                         img0_buf.pop();
                         std::cout << "\n Throw img0 -- Sync error : " << (time0 - time1) << "\n";
                     }
-                    else if(time0 > time1 + 0.015)
+                    else if (time0 > time1 + 0.015)
                     {
                         img1_buf.pop();
                         std::cout << "\n Throw img1 -- Sync error : " << (time0 - time1) << "\n";
@@ -117,25 +122,27 @@ public:
                         img0_buf.pop();
                         img1_buf.pop();
 
-                        if( !image0.empty() && !image1.empty() ) {
+                        if (!image0.empty() && !image1.empty())
+                        {
                             pslam_->addNewStereoImages(time0, image0, image1);
                         }
                     }
                 }
-            } 
-            else if( pslam_->pslamstate_->mono_ ) 
+            }
+            else if (pslam_->pslamstate_->mono_) // 单目
             {
                 cv::Mat image0;
 
                 std::lock_guard<std::mutex> lock(img_mutex);
 
-                if ( !img0_buf.empty() )
+                if (!img0_buf.empty())
                 {
                     double time = img0_buf.front()->header.stamp.toSec();
                     image0 = getGrayImageFromMsg(img0_buf.front());
                     img0_buf.pop();
 
-                    if( !image0.empty()) {
+                    if (!image0.empty())
+                    {
                         pslam_->addNewMonoImage(time, image0);
                     }
                 }
@@ -151,20 +158,19 @@ public:
     std::queue<sensor_msgs::ImageConstPtr> img0_buf;
     std::queue<sensor_msgs::ImageConstPtr> img1_buf;
     std::mutex img_mutex;
-    
+
     SlamManager *pslam_;
 };
 
-
-int main(int argc, char** argv)
+int main(int argc, char **argv)
 {
     // Init the node
     ros::init(argc, argv, "ov2slam_node");
 
-    if(argc < 2)
+    if (argc < 2)
     {
-       std::cout << "\nUsage: rosrun ov2slam ov2slam_node parameters_files/params.yaml\n";
-       return 1;
+        std::cout << "\nUsage: rosrun ov2slam ov2slam_node parameters_files/params.yaml\n";
+        return 1;
     }
 
     std::cout << "\nLaunching OV²SLAM...\n\n";
@@ -177,19 +183,22 @@ int main(int argc, char** argv)
     std::cout << "\nLoading parameters file : " << parameters_file << "...\n";
 
     const cv::FileStorage fsSettings(parameters_file.c_str(), cv::FileStorage::READ);
-    if(!fsSettings.isOpened()) {
-       std::cout << "Failed to open settings file...";
-       return 1;
-    } else {
+    if (!fsSettings.isOpened())
+    {
+        std::cout << "Failed to open settings file...";
+        return 1;
+    }
+    else
+    {
         std::cout << "\nParameters file loaded...\n";
     }
 
     std::shared_ptr<SlamParams> pparams;
-    pparams.reset( new SlamParams(fsSettings) );
+    pparams.reset(new SlamParams(fsSettings));
 
     // Create the ROS Visualizer
     std::shared_ptr<RosVisualizer> prosviz;
-    prosviz.reset( new RosVisualizer(nh) );
+    prosviz.reset(new RosVisualizer(nh));
 
     // Setting up the SLAM Manager
     SlamManager slam(pparams, prosviz);
@@ -214,7 +223,8 @@ int main(int argc, char** argv)
     slam.bexit_required_ = true;
 
     // Waiting end of SLAM Manager
-    while( slam.bis_on_ ) {
+    while (slam.bis_on_)
+    {
         std::chrono::seconds dura(1);
         std::this_thread::sleep_for(dura);
     }

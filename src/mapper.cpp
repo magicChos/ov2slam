@@ -29,11 +29,9 @@
 #include "mapper.hpp"
 #include "opencv2/video/tracking.hpp"
 
-Mapper::Mapper(std::shared_ptr<SlamParams> pslamstate, std::shared_ptr<MapManager> pmap, 
-            std::shared_ptr<Frame> pframe)
-    : pslamstate_(pslamstate), pmap_(pmap), pcurframe_(pframe)
-    , pestimator_( new Estimator(pslamstate_, pmap_) )
-    , ploopcloser_( new LoopCloser(pslamstate_, pmap_) )
+Mapper::Mapper(std::shared_ptr<SlamParams> pslamstate, std::shared_ptr<MapManager> pmap,
+               std::shared_ptr<Frame> pframe)
+    : pslamstate_(pslamstate), pmap_(pmap), pcurframe_(pframe), pestimator_(new Estimator(pslamstate_, pmap_)), ploopcloser_(new LoopCloser(pslamstate_, pmap_))
 {
     std::thread mapper_thread(&Mapper::run, this);
     mapper_thread.detach();
@@ -44,99 +42,110 @@ Mapper::Mapper(std::shared_ptr<SlamParams> pslamstate, std::shared_ptr<MapManage
 void Mapper::run()
 {
     std::cout << "\nMapper is ready to process Keyframes!\n";
-    
+
     Keyframe kf;
 
     std::thread estimator_thread(&Estimator::run, pestimator_);
     std::thread lc_thread(&LoopCloser::run, ploopcloser_);
 
-    while( !bexit_required_ ) {
+    while (!bexit_required_)
+    {
 
-        if( getNewKf(kf) ) 
+        if (getNewKf(kf))
         {
-            if( pslamstate_->debug_ )
-                std::cout << "\n\n - [Mapper (back-End)]: New KF to process : KF #" 
-                    << kf.kfid_ << "\n";
+            if (pslamstate_->debug_)
+                std::cout << "\n\n - [Mapper (back-End)]: New KF to process : KF #"
+                          << kf.kfid_ << "\n";
 
-            if( pslamstate_->debug_ || pslamstate_->log_timings_ )
+            if (pslamstate_->debug_ || pslamstate_->log_timings_)
                 Profiler::Start("0.Keyframe-Processing_Mapper");
 
             // Get new KF ptr
             std::shared_ptr<Frame> pnewkf = pmap_->getKeyframe(kf.kfid_);
-            assert( pnewkf );
+            assert(pnewkf);
 
             // Triangulate stereo
-            if( pslamstate_->stereo_ ) 
+            if (pslamstate_->stereo_)
             {
-                if( pslamstate_->debug_ )
+                if (pslamstate_->debug_)
                     std::cout << "\n\n - [Mapper (back-End)]: Applying stereo matching!\n";
 
                 cv::Mat imright;
-                if( pslamstate_->use_clahe_ ) {
+                if (pslamstate_->use_clahe_)
+                {
                     pmap_->ptracker_->pclahe_->apply(kf.imrightraw_, imright);
-                } else {
+                }
+                else
+                {
                     imright = kf.imrightraw_;
                 }
                 std::vector<cv::Mat> vpyr_imright;
                 cv::buildOpticalFlowPyramid(imright, vpyr_imright, pslamstate_->klt_win_size_, pslamstate_->nklt_pyr_lvl_);
 
                 pmap_->stereoMatching(*pnewkf, kf.vpyr_imleft_, vpyr_imright);
-                
-                if( pnewkf->nb2dkps_ > 0 && pnewkf->nb_stereo_kps_ > 0 ) {
-                    
-                    if( pslamstate_->debug_ ) {
+
+                if (pnewkf->nb2dkps_ > 0 && pnewkf->nb_stereo_kps_ > 0)
+                {
+
+                    if (pslamstate_->debug_)
+                    {
                         std::cout << "\n\n - [Mapper (back-End)]: Stereo Triangulation!\n";
 
                         std::cout << "\n\n  \t >>> (BEFORE STEREO TRIANGULATION) New KF nb 2d kps / 3d kps / stereokps : ";
-                        std::cout << pnewkf->nb2dkps_ << " / " << pnewkf->nb3dkps_ 
-                            << " / " << pnewkf->nb_stereo_kps_ << "\n";
+                        std::cout << pnewkf->nb2dkps_ << " / " << pnewkf->nb3dkps_
+                                  << " / " << pnewkf->nb_stereo_kps_ << "\n";
                     }
 
                     std::lock_guard<std::mutex> lock(pmap_->map_mutex_);
 
                     triangulateStereo(*pnewkf);
 
-                    if( pslamstate_->debug_ ) {
+                    if (pslamstate_->debug_)
+                    {
                         std::cout << "\n\n  \t >>> (AFTER STEREO TRIANGULATION) New KF nb 2d kps / 3d kps / stereokps : ";
-                        std::cout << pnewkf->nb2dkps_ << " / " << pnewkf->nb3dkps_ 
-                            << " / " << pnewkf->nb_stereo_kps_ << "\n";
+                        std::cout << pnewkf->nb2dkps_ << " / " << pnewkf->nb3dkps_
+                                  << " / " << pnewkf->nb_stereo_kps_ << "\n";
                     }
                 }
             }
 
             // Triangulate temporal
-            if( pnewkf->nb2dkps_ > 0 && pnewkf->kfid_ > 0 ) 
+            if (pnewkf->nb2dkps_ > 0 && pnewkf->kfid_ > 0)
             {
-                if( pslamstate_->debug_ ) {
+                if (pslamstate_->debug_)
+                {
                     std::cout << "\n\n - [Mapper (back-End)]: Temporal Triangulation!\n";
 
                     std::cout << "\n\n  \t >>> (BEFORE TEMPORAL TRIANGULATION) New KF nb 2d kps / 3d kps / stereokps : ";
-                    std::cout << pnewkf->nb2dkps_ << " / " << pnewkf->nb3dkps_ 
-                        << " / " << pnewkf->nb_stereo_kps_ << "\n";
+                    std::cout << pnewkf->nb2dkps_ << " / " << pnewkf->nb3dkps_
+                              << " / " << pnewkf->nb_stereo_kps_ << "\n";
                 }
 
                 std::lock_guard<std::mutex> lock(pmap_->map_mutex_);
-                
+
                 triangulateTemporal(*pnewkf);
-                
-                if( pslamstate_->debug_ ) {
+
+                if (pslamstate_->debug_)
+                {
                     std::cout << "\n\n  \t >>> (AFTER TEMPORAL TRIANGULATION) New KF nb 2d kps / 3d kps / stereokps : ";
                     std::cout << pnewkf->nb2dkps_ << " / " << pnewkf->nb3dkps_ << " / " << pnewkf->nb_stereo_kps_ << "\n";
                 }
             }
 
             // If Mono mode, check if reset is required
-            if( pslamstate_->mono_ && pslamstate_->bvision_init_ ) 
+            if (pslamstate_->mono_ && pslamstate_->bvision_init_)
             {
-                if( kf.kfid_ == 1 && pnewkf->nb3dkps_ < 30 ) {
+                if (kf.kfid_ == 1 && pnewkf->nb3dkps_ < 30)
+                {
                     std::cout << "\n Bad initialization detected! Resetting\n";
                     pslamstate_->breset_req_ = true;
                     reset();
                     continue;
-                } 
-                else if( kf.kfid_ < 10 && pnewkf->nb3dkps_ < 3 ) {
-                    std::cout << "\n Reset required : Nb 3D kps #" 
-                            << pnewkf->nb3dkps_;
+                }
+                else if (kf.kfid_ < 10 && pnewkf->nb3dkps_ < 3)
+                {
+                    std::cout << "\n Reset required : Nb 3D kps #"
+                              << pnewkf->nb3dkps_;
                     pslamstate_->breset_req_ = true;
                     reset();
                     continue;
@@ -150,12 +159,11 @@ void Mapper::run()
             // Dirty but useful for visualization
             pcurframe_->map_covkfs_ = pnewkf->map_covkfs_;
 
-            if( pslamstate_->use_brief_ && kf.kfid_ > 0 
-                && !bnewkfavailable_ ) 
+            if (pslamstate_->use_brief_ && kf.kfid_ > 0 && !bnewkfavailable_)
             {
-                if( pslamstate_->bdo_track_localmap_ )
+                if (pslamstate_->bdo_track_localmap_)
                 {
-                    if( pslamstate_->debug_ )
+                    if (pslamstate_->debug_)
                         std::cout << "\n\n - [Mapper (back-End)]: matchingToLocalMap()!\n";
                     matchingToLocalMap(*pnewkf);
                 }
@@ -165,14 +173,16 @@ void Mapper::run()
             pestimator_->addNewKf(pnewkf);
 
             // Send KF along with left image to LC thread
-            if( pslamstate_->buse_loop_closer_ ) {
+            if (pslamstate_->buse_loop_closer_)
+            {
                 ploopcloser_->addNewKf(pnewkf, kf.imleftraw_);
             }
 
-            if( pslamstate_->debug_ || pslamstate_->log_timings_ )
-        Profiler::StopAndDisplay(pslamstate_->debug_, "0.Keyframe-Processing_Mapper");
-
-        } else {
+            if (pslamstate_->debug_ || pslamstate_->log_timings_)
+                Profiler::StopAndDisplay(pslamstate_->debug_, "0.Keyframe-Processing_Mapper");
+        }
+        else
+        {
             std::chrono::microseconds dura(100);
             std::this_thread::sleep_for(dura);
         }
@@ -183,14 +193,13 @@ void Mapper::run()
 
     estimator_thread.join();
     lc_thread.join();
-    
+
     std::cout << "\nMapper is stopping!\n";
 }
 
-
 void Mapper::triangulateTemporal(Frame &frame)
 {
-    if( pslamstate_->debug_ || pslamstate_->log_timings_ )
+    if (pslamstate_->debug_ || pslamstate_->log_timings_)
         Profiler::Start("1.KF_TriangulateTemporal");
 
     // Get New KF kps / pose
@@ -198,8 +207,9 @@ void Mapper::triangulateTemporal(Frame &frame)
 
     Sophus::SE3d Twcj = frame.getTwc();
 
-    if( vkps.empty() ) {
-        if( pslamstate_->debug_ )
+    if (vkps.empty())
+    {
+        if (pslamstate_->debug_)
             std::cout << "\n \t >>> No kps to temporal triangulate...\n";
         return;
     }
@@ -207,14 +217,14 @@ void Mapper::triangulateTemporal(Frame &frame)
     // Setup triangulatation for OpenGV-based mapping
     size_t nbkps = vkps.size();
 
-    std::vector<Eigen::Vector3d, Eigen::aligned_allocator<Eigen::Vector3d> > vleftbvs, vrightbvs;
+    std::vector<Eigen::Vector3d, Eigen::aligned_allocator<Eigen::Vector3d>> vleftbvs, vrightbvs;
     vleftbvs.reserve(nbkps);
     vrightbvs.reserve(nbkps);
 
     // Init a pkf object that will point to the prev KF to use
     // for triangulation
     std::shared_ptr<Frame> pkf;
-    pkf.reset( new Frame() );
+    pkf.reset(new Frame());
     pkf->kfid_ = -1;
 
     // Relative motions between new KF and prev. KFs
@@ -229,25 +239,27 @@ void Mapper::triangulateTemporal(Frame &frame)
 
     int good = 0, candidates = 0;
 
-    std::vector<Eigen::Vector3d, Eigen::aligned_allocator<Eigen::Vector3d> > vwpts;
+    std::vector<Eigen::Vector3d, Eigen::aligned_allocator<Eigen::Vector3d>> vwpts;
     std::vector<int> vlmids;
     vwpts.reserve(nbkps);
     vlmids.reserve(nbkps);
 
     // We go through all the 2D kps in new KF
-    for( size_t i = 0 ; i < nbkps ; i++ )
+    for (size_t i = 0; i < nbkps; i++)
     {
-        // Get the related MP and check if it is ready 
-        // to be triangulated 
+        // Get the related MP and check if it is ready
+        // to be triangulated
         std::shared_ptr<MapPoint> plm = pmap_->getMapPoint(vkps.at(i).lmid_);
 
-        if( plm == nullptr ) {
+        if (plm == nullptr)
+        {
             pmap_->removeMapPointObs(vkps.at(i).lmid_, frame.kfid_);
             continue;
         }
 
         // If MP is already 3D continue (should not happen)
-        if( plm->is3d_ ) {
+        if (plm->is3d_)
+        {
             continue;
         }
 
@@ -255,26 +267,30 @@ void Mapper::triangulateTemporal(Frame &frame)
         std::set<int> co_kf_ids = plm->getKfObsSet();
 
         // Continue if new KF is the only one observing it
-        if( co_kf_ids.size() < 2 ) {
+        if (co_kf_ids.size() < 2)
+        {
             continue;
         }
 
         int kfid = *co_kf_ids.begin();
 
-        if( frame.kfid_ == kfid ) {
+        if (frame.kfid_ == kfid)
+        {
             continue;
         }
 
         // Get the 1st KF observation of the related MP
         pkf = pmap_->getKeyframe(kfid);
-        
-        if( pkf == nullptr ) {
+
+        if (pkf == nullptr)
+        {
             continue;
         }
 
         // Compute relative motion between new KF and selected KF
         // (only if req.)
-        if( relkfid != kfid ) {
+        if (relkfid != kfid)
+        {
             Sophus::SE3d Tciw = pkf->getTcw();
             Tcicj = Tciw * Twcj;
             Tcjci = Tcicj.inverse();
@@ -284,13 +300,15 @@ void Mapper::triangulateTemporal(Frame &frame)
         }
 
         // If no motion between both KF, skip
-        if( pslamstate_->stereo_ && Tcicj.translation().norm() < 0.01 ) {
+        if (pslamstate_->stereo_ && Tcicj.translation().norm() < 0.01)
+        {
             continue;
         }
-        
+
         // Get obs kp
         Keypoint kfkp = pkf->getKeypointById(vkps.at(i).lmid_);
-        if( kfkp.lmid_ != vkps.at(i).lmid_ ) {
+        if (kfkp.lmid_ != vkps.at(i).lmid_)
+        {
             continue;
         }
 
@@ -307,8 +325,10 @@ void Mapper::triangulateTemporal(Frame &frame)
         right_pt = Tcjci * left_pt;
 
         // Ensure that the 3D MP is in front of both camera
-        if( left_pt.z() < 0.1 || right_pt.z() < 0.1 ) {
-            if( parallax > 20. ) {
+        if (left_pt.z() < 0.1 || right_pt.z() < 0.1)
+        {
+            if (parallax > 20.)
+            {
                 pmap_->removeMapPointObs(kfkp.lmid_, frame.kfid_);
             }
             continue;
@@ -320,9 +340,10 @@ void Mapper::triangulateTemporal(Frame &frame)
         ldist = cv::norm(left_px_proj - kfkp.unpx_);
         rdist = cv::norm(right_px_proj - vkps.at(i).unpx_);
 
-        if( ldist > pslamstate_->fmax_reproj_err_ 
-            || rdist > pslamstate_->fmax_reproj_err_ ) {
-            if( parallax > 20. ) {
+        if (ldist > pslamstate_->fmax_reproj_err_ || rdist > pslamstate_->fmax_reproj_err_)
+        {
+            if (parallax > 20.)
+            {
                 pmap_->removeMapPointObs(kfkp.lmid_, frame.kfid_);
             }
             continue;
@@ -330,22 +351,22 @@ void Mapper::triangulateTemporal(Frame &frame)
 
         // The 3D pos is good, update SLAM MP and related KF / Frame
         wpt = pkf->projCamToWorld(left_pt);
-        pmap_->updateMapPoint(vkps.at(i).lmid_, wpt, 1./left_pt.z());
+        pmap_->updateMapPoint(vkps.at(i).lmid_, wpt, 1. / left_pt.z());
 
         good++;
     }
 
-    if( pslamstate_->debug_ )
-        std::cout << "\n \t >>> Temporal Mapping : " << good << " 3D MPs out of " 
-            << candidates << " kps !\n";
+    if (pslamstate_->debug_)
+        std::cout << "\n \t >>> Temporal Mapping : " << good << " 3D MPs out of "
+                  << candidates << " kps !\n";
 
-    if( pslamstate_->debug_ || pslamstate_->log_timings_ )
+    if (pslamstate_->debug_ || pslamstate_->log_timings_)
         Profiler::StopAndDisplay(pslamstate_->debug_, "1.KF_TriangulateTemporal");
 }
 
 void Mapper::triangulateStereo(Frame &frame)
 {
-    if( pslamstate_->debug_ || pslamstate_->log_timings_ )
+    if (pslamstate_->debug_ || pslamstate_->log_timings_)
         Profiler::Start("1.KF_TriangulateStereo");
 
     // INIT STEREO TRIANGULATE
@@ -354,22 +375,23 @@ void Mapper::triangulateStereo(Frame &frame)
     // Get the new KF stereo kps
     vkps = frame.getKeypointsStereo();
 
-    if( vkps.empty() ) {
-        if( pslamstate_->debug_ )
+    if (vkps.empty())
+    {
+        if (pslamstate_->debug_)
             std::cout << "\n \t >>> No kps to stereo triangulate...\n";
         return;
     }
 
     // Store the stereo kps along with their idx
     std::vector<int> vstereoidx;
-    std::vector<Eigen::Vector3d, Eigen::aligned_allocator<Eigen::Vector3d> > vleftbvs, vrightbvs;
+    std::vector<Eigen::Vector3d, Eigen::aligned_allocator<Eigen::Vector3d>> vleftbvs, vrightbvs;
 
     size_t nbkps = vkps.size();
 
     vleftbvs.reserve(nbkps);
     vrightbvs.reserve(nbkps);
 
-    std::vector<Eigen::Vector3d, Eigen::aligned_allocator<Eigen::Vector3d> > vwpts;
+    std::vector<Eigen::Vector3d, Eigen::aligned_allocator<Eigen::Vector3d>> vwpts;
     std::vector<int> vlmids;
     vwpts.reserve(nbkps);
     vlmids.reserve(nbkps);
@@ -378,9 +400,9 @@ void Mapper::triangulateStereo(Frame &frame)
     Sophus::SE3d Tlr = frame.pcalib_rightcam_->getExtrinsic();
     Sophus::SE3d Trl = Tlr.inverse();
 
-    for( size_t i = 0 ; i < nbkps ; i++ )
+    for (size_t i = 0; i < nbkps; i++)
     {
-        if( !vkps.at(i).is3d_ && vkps.at(i).is_stereo_ )
+        if (!vkps.at(i).is3d_ && vkps.at(i).is_stereo_)
         {
             vstereoidx.push_back(i);
             vleftbvs.push_back(vkps.at(i).bv_);
@@ -388,7 +410,8 @@ void Mapper::triangulateStereo(Frame &frame)
         }
     }
 
-    if( vstereoidx.empty() ) {
+    if (vstereoidx.empty())
+    {
         return;
     }
 
@@ -403,14 +426,16 @@ void Mapper::triangulateStereo(Frame &frame)
     int good = 0;
 
     // For each stereo kp
-    for( size_t i = 0 ; i < nbstereo ; i++ ) 
+    for (size_t i = 0; i < nbstereo; i++)
     {
         kpidx = vstereoidx.at(i);
 
-        if( pslamstate_->bdo_stereo_rect_ ) {
+        if (pslamstate_->bdo_stereo_rect_)
+        {
             float disp = vkps.at(kpidx).unpx_.x - vkps.at(kpidx).runpx_.x;
 
-            if( disp < 0. ) {
+            if (disp < 0.)
+            {
                 frame.removeStereoKeypointById(vkps.at(kpidx).lmid_);
                 continue;
             }
@@ -419,7 +444,9 @@ void Mapper::triangulateStereo(Frame &frame)
 
             left_pt << vkps.at(kpidx).unpx_.x, vkps.at(kpidx).unpx_.y, 1.;
             left_pt = z * frame.pcalib_leftcam_->iK_ * left_pt.eval();
-        } else {
+        }
+        else
+        {
             // Triangulate in left cam frame
             left_pt = computeTriangulation(Tlr, vleftbvs.at(i), vrightbvs.at(i));
         }
@@ -427,7 +454,8 @@ void Mapper::triangulateStereo(Frame &frame)
         // Project into right cam frame
         right_pt = Trl * left_pt;
 
-        if( left_pt.z() < 0.1 || right_pt.z() < 0.1 ) {
+        if (left_pt.z() < 0.1 || right_pt.z() < 0.1)
+        {
             frame.removeStereoKeypointById(vkps.at(kpidx).lmid_);
             continue;
         }
@@ -438,8 +466,8 @@ void Mapper::triangulateStereo(Frame &frame)
         ldist = cv::norm(left_px_proj - vkps.at(kpidx).unpx_);
         rdist = cv::norm(right_px_proj - vkps.at(kpidx).runpx_);
 
-        if( ldist > pslamstate_->fmax_reproj_err_
-            || rdist > pslamstate_->fmax_reproj_err_ ) {
+        if (ldist > pslamstate_->fmax_reproj_err_ || rdist > pslamstate_->fmax_reproj_err_)
+        {
             frame.removeStereoKeypointById(vkps.at(kpidx).lmid_);
             continue;
         }
@@ -447,16 +475,16 @@ void Mapper::triangulateStereo(Frame &frame)
         // Project MP in world frame
         wpt = frame.projCamToWorld(left_pt);
 
-        pmap_->updateMapPoint(vkps.at(kpidx).lmid_, wpt, 1./left_pt.z());
+        pmap_->updateMapPoint(vkps.at(kpidx).lmid_, wpt, 1. / left_pt.z());
 
         good++;
     }
 
-    if( pslamstate_->debug_ )
-        std::cout << "\n \t >>> Stereo Mapping : " << good << " 3D MPs out of " 
-            << nbstereo << " kps !\n";
+    if (pslamstate_->debug_)
+        std::cout << "\n \t >>> Stereo Mapping : " << good << " 3D MPs out of "
+                  << nbstereo << " kps !\n";
 
-    if( pslamstate_->debug_ || pslamstate_->log_timings_ )
+    if (pslamstate_->debug_ || pslamstate_->log_timings_)
         Profiler::StopAndDisplay(pslamstate_->debug_, "1.KF_TriangulateStereo");
 }
 
@@ -468,7 +496,7 @@ inline Eigen::Vector3d Mapper::computeTriangulation(const Sophus::SE3d &T, const
 
 bool Mapper::matchingToLocalMap(Frame &frame)
 {
-    if( pslamstate_->debug_ || pslamstate_->log_timings_ )
+    if (pslamstate_->debug_ || pslamstate_->log_timings_)
         Profiler::Start("1.KF_MatchingToLocalMap");
 
     // Maximum number of MPs to track
@@ -478,67 +506,74 @@ bool Mapper::matchingToLocalMap(Frame &frame)
     // and add it to the set of MPs to search for
     auto cov_map = frame.getCovisibleKfMap();
 
-    if( frame.set_local_mapids_.size() < nmax_localplms ) 
+    if (frame.set_local_mapids_.size() < nmax_localplms)
     {
         int kfid = cov_map.begin()->first;
         auto pkf = pmap_->getKeyframe(kfid);
-        while( pkf == nullptr  && kfid > 0 && !bnewkfavailable_ ) {
+        while (pkf == nullptr && kfid > 0 && !bnewkfavailable_)
+        {
             kfid--;
             pkf = pmap_->getKeyframe(kfid);
         }
 
         // Skip if no time
-        if( bnewkfavailable_ ) {
+        if (bnewkfavailable_)
+        {
             return false;
         }
-        
-        if( pkf != nullptr ) {
-            frame.set_local_mapids_.insert( pkf->set_local_mapids_.begin(), pkf->set_local_mapids_.end() );
+
+        if (pkf != nullptr)
+        {
+            frame.set_local_mapids_.insert(pkf->set_local_mapids_.begin(), pkf->set_local_mapids_.end());
         }
 
         // If still far not enough, go for another round
-        if( pkf->kfid_ > 0 && frame.set_local_mapids_.size() < 0.5 * nmax_localplms )
+        if (pkf->kfid_ > 0 && frame.set_local_mapids_.size() < 0.5 * nmax_localplms)
         {
             pkf = pmap_->getKeyframe(pkf->kfid_);
-            while( pkf == nullptr  && kfid > 0 && !bnewkfavailable_ ) {
+            while (pkf == nullptr && kfid > 0 && !bnewkfavailable_)
+            {
                 kfid--;
                 pkf = pmap_->getKeyframe(kfid);
             }
 
             // Skip if no time
-            if( bnewkfavailable_ ) {
+            if (bnewkfavailable_)
+            {
                 return false;
             }
-            
-            if( pkf != nullptr ) {
-                frame.set_local_mapids_.insert( pkf->set_local_mapids_.begin(), pkf->set_local_mapids_.end() );
+
+            if (pkf != nullptr)
+            {
+                frame.set_local_mapids_.insert(pkf->set_local_mapids_.begin(), pkf->set_local_mapids_.end());
             }
         }
     }
 
     // Skip if no time
-    if( bnewkfavailable_ ) {
+    if (bnewkfavailable_)
+    {
         return false;
     }
 
-    if( pslamstate_->debug_ )
-        std::cout << "\n \t>>> matchToLocalMap() --> Number of local MPs selected : " 
-            << frame.set_local_mapids_.size() << "\n";
+    if (pslamstate_->debug_)
+        std::cout << "\n \t>>> matchToLocalMap() --> Number of local MPs selected : "
+                  << frame.set_local_mapids_.size() << "\n";
 
     // Track local map
-    std::map<int,int> map_previd_newid = matchToMap(
-                                            frame, pslamstate_->fmax_proj_pxdist_, 
-                                            pslamstate_->fmax_desc_dist_, frame.set_local_mapids_
-                                            );
+    std::map<int, int> map_previd_newid = matchToMap(
+        frame, pslamstate_->fmax_proj_pxdist_,
+        pslamstate_->fmax_desc_dist_, frame.set_local_mapids_);
 
     size_t nbmatches = map_previd_newid.size();
 
-    if( pslamstate_->debug_ )
-        std::cout << "\n \t>>> matchToLocalMap() --> Match To Local Map found #" 
-            << nbmatches << " matches \n"; 
+    if (pslamstate_->debug_)
+        std::cout << "\n \t>>> matchToLocalMap() --> Match To Local Map found #"
+                  << nbmatches << " matches \n";
 
     // Return if no matches
-    if( nbmatches == 0 ) {
+    if (nbmatches == 0)
+    {
         return false;
     }
 
@@ -547,20 +582,20 @@ bool Mapper::matchingToLocalMap(Frame &frame)
     std::thread thread(&Mapper::mergeMatches, this, std::ref(frame), map_previd_newid);
     thread.detach();
 
-    if( pslamstate_->debug_ || pslamstate_->log_timings_ )
+    if (pslamstate_->debug_ || pslamstate_->log_timings_)
         Profiler::StopAndDisplay(pslamstate_->debug_, "1.KF_MatchingToLocalMap");
-        
+
     return true;
 }
 
-void Mapper::mergeMatches(const Frame &frame, const std::map<int,int> &map_kpids_lmids)
+void Mapper::mergeMatches(const Frame &frame, const std::map<int, int> &map_kpids_lmids)
 {
     std::lock_guard<std::mutex> lock2(pmap_->optim_mutex_);
 
     std::lock_guard<std::mutex> lock(pmap_->map_mutex_);
 
     // Merge the matches
-    for( const auto &ids : map_kpids_lmids )
+    for (const auto &ids : map_kpids_lmids)
     {
         int prevlmid = ids.first;
         int newlmid = ids.second;
@@ -568,17 +603,18 @@ void Mapper::mergeMatches(const Frame &frame, const std::map<int,int> &map_kpids
         pmap_->mergeMapPoints(prevlmid, newlmid);
     }
 
-    if( pslamstate_->debug_ )
-        std::cout << "\n >>> matchToLocalMap() / mergeMatches() --> Number of merges : " 
-            << map_kpids_lmids.size() << "\n";
+    if (pslamstate_->debug_)
+        std::cout << "\n >>> matchToLocalMap() / mergeMatches() --> Number of merges : "
+                  << map_kpids_lmids.size() << "\n";
 }
 
-std::map<int,int> Mapper::matchToMap(const Frame &frame, const float fmaxprojerr, const float fdistratio, std::unordered_set<int> &set_local_lmids)
+std::map<int, int> Mapper::matchToMap(const Frame &frame, const float fmaxprojerr, const float fdistratio, std::unordered_set<int> &set_local_lmids)
 {
-    std::map<int,int> map_previd_newid;
+    std::map<int, int> map_previd_newid;
 
     // Leave if local map is empty
-    if( set_local_lmids.empty() ) {
+    if (set_local_lmids.empty())
+    {
         return map_previd_newid;
     }
 
@@ -587,9 +623,12 @@ std::map<int,int> Mapper::matchToMap(const Frame &frame, const float fmaxprojerr
     const float hfov = 0.5 * frame.pcalib_leftcam_->img_w_ / frame.pcalib_leftcam_->fx_;
 
     float maxradfov = 0.;
-    if( hfov > vfov ) {
+    if (hfov > vfov)
+    {
         maxradfov = std::atan(hfov);
-    } else {
+    }
+    else
+    {
         maxradfov = std::atan(vfov);
     }
 
@@ -597,28 +636,34 @@ std::map<int,int> Mapper::matchToMap(const Frame &frame, const float fmaxprojerr
 
     // Define max distance from projection
     float dmaxpxdist = fmaxprojerr;
-    if( frame.nb3dkps_ < 30 ) {
+    if (frame.nb3dkps_ < 30)
+    {
         dmaxpxdist *= 2.;
     }
 
     std::map<int, std::vector<std::pair<int, float>>> map_kpids_vlmidsdist;
 
     // Go through all MP from the local map
-    for( const int lmid : set_local_lmids )
+    for (const int lmid : set_local_lmids)
     {
-        if( bnewkfavailable_ ) {
+        if (bnewkfavailable_)
+        {
             break;
         }
 
-        if( frame.isObservingKp(lmid) ) {
+        if (frame.isObservingKp(lmid))
+        {
             continue;
         }
 
         auto plm = pmap_->getMapPoint(lmid);
 
-        if( plm == nullptr ) {
+        if (plm == nullptr)
+        {
             continue;
-        } else if( !plm->is3d_ || plm->desc_.empty() ) {
+        }
+        else if (!plm->is3d_ || plm->desc_.empty())
+        {
             continue;
         }
 
@@ -627,19 +672,22 @@ std::map<int,int> Mapper::matchToMap(const Frame &frame, const float fmaxprojerr
         //Project 3D MP into KF's image
         Eigen::Vector3d campt = frame.projWorldToCam(wpt);
 
-        if( campt.z() < 0.1 ) {
+        if (campt.z() < 0.1)
+        {
             continue;
         }
 
         float view_angle = campt.z() / campt.norm();
 
-        if( fabs(view_angle) < view_th ) {
+        if (fabs(view_angle) < view_th)
+        {
             continue;
         }
 
         cv::Point2f projpx = frame.projCamToImageDist(campt);
 
-        if( !frame.isInImage(projpx) ) {
+        if (!frame.isInImage(projpx))
+        {
             continue;
         }
 
@@ -658,15 +706,17 @@ std::map<int,int> Mapper::matchToMap(const Frame &frame, const float fmaxprojerr
         std::vector<float> vpxdist;
         cv::Mat descs;
 
-        for( const auto &kp : vnearkps )
+        for (const auto &kp : vnearkps)
         {
-            if( kp.lmid_ < 0 ) {
+            if (kp.lmid_ < 0)
+            {
                 continue;
             }
 
             float pxdist = cv::norm(projpx - kp.px_);
 
-            if( pxdist > dmaxpxdist ) {
+            if (pxdist > dmaxpxdist)
+            {
                 continue;
             }
 
@@ -675,97 +725,121 @@ std::map<int,int> Mapper::matchToMap(const Frame &frame, const float fmaxprojerr
             // are never both observed in a given KF)
             auto pkplm = pmap_->getMapPoint(kp.lmid_);
 
-            if( pkplm == nullptr ) {
-                pmap_->removeMapPointObs(kp.lmid_,frame.kfid_);
+            if (pkplm == nullptr)
+            {
+                pmap_->removeMapPointObs(kp.lmid_, frame.kfid_);
                 continue;
             }
 
-            if( pkplm->desc_.empty() ) {
+            if (pkplm->desc_.empty())
+            {
                 continue;
             }
             bool is_candidate = true;
             auto set_plmkfs = plm->getKfObsSet();
-            for( const auto &kfid : pkplm->getKfObsSet() ) {
-                if( set_plmkfs.count(kfid) ) {
+            for (const auto &kfid : pkplm->getKfObsSet())
+            {
+                if (set_plmkfs.count(kfid))
+                {
                     is_candidate = false;
                     break;
                 }
             }
-            if( !is_candidate ) {
+            if (!is_candidate)
+            {
                 continue;
             }
 
             float coprojpx = 0.;
             size_t nbcokp = 0;
 
-            for( const auto &kfid : pkplm->getKfObsSet() ) {
+            for (const auto &kfid : pkplm->getKfObsSet())
+            {
                 auto pcokf = pmap_->getKeyframe(kfid);
-                if( pcokf != nullptr ) {
+                if (pcokf != nullptr)
+                {
                     auto cokp = pcokf->getKeypointById(kp.lmid_);
-                    if( cokp.lmid_ == kp.lmid_ ) {
+                    if (cokp.lmid_ == kp.lmid_)
+                    {
                         coprojpx += cv::norm(cokp.px_ - pcokf->projWorldToImageDist(wpt));
                         nbcokp++;
-                    } else {
+                    }
+                    else
+                    {
                         pmap_->removeMapPointObs(kp.lmid_, kfid);
                     }
-                } else {
+                }
+                else
+                {
                     pmap_->removeMapPointObs(kp.lmid_, kfid);
                 }
             }
 
-            if( coprojpx / nbcokp > dmaxpxdist ) {
+            if (coprojpx / nbcokp > dmaxpxdist)
+            {
                 continue;
             }
-            
+
             float dist = plm->computeMinDescDist(*pkplm);
 
-            if( dist <= bestdist ) {
+            if (dist <= bestdist)
+            {
                 secdist = bestdist; // Will stay at mindist 1st time
-                secid = bestid; // Will stay at -1 1st time
+                secid = bestid;     // Will stay at -1 1st time
 
                 bestdist = dist;
                 bestid = kp.lmid_;
             }
-            else if( dist <= secdist ) {
+            else if (dist <= secdist)
+            {
                 secdist = dist;
                 secid = kp.lmid_;
             }
         }
 
-        if( bestid != -1 && secid != -1 ) {
-            if( 0.9 * secdist < bestdist ) {
+        if (bestid != -1 && secid != -1)
+        {
+            if (0.9 * secdist < bestdist)
+            {
                 bestid = -1;
             }
         }
 
-        if( bestid < 0 ) {
+        if (bestid < 0)
+        {
             continue;
         }
 
         std::pair<int, float> lmid_dist(lmid, bestdist);
-        if( !map_kpids_vlmidsdist.count(bestid) ) {
-            std::vector<std::pair<int, float>> v(1,lmid_dist);
+        if (!map_kpids_vlmidsdist.count(bestid))
+        {
+            std::vector<std::pair<int, float>> v(1, lmid_dist);
             map_kpids_vlmidsdist.emplace(bestid, v);
-        } else {
+        }
+        else
+        {
             map_kpids_vlmidsdist.at(bestid).push_back(lmid_dist);
         }
     }
 
-    for( const auto &kpid_vlmidsdist : map_kpids_vlmidsdist )
+    for (const auto &kpid_vlmidsdist : map_kpids_vlmidsdist)
     {
         int kpid = kpid_vlmidsdist.first;
 
         float bestdist = 1024;
         int bestlmid = -1;
 
-        for( const auto &lmid_dist : kpid_vlmidsdist.second ) {
-            if( lmid_dist.second <= bestdist ) {
+        for (const auto &lmid_dist : kpid_vlmidsdist.second)
+        {
+            if (lmid_dist.second <= bestdist)
+            {
                 bestdist = lmid_dist.second;
                 bestlmid = lmid_dist.first;
             }
         }
 
-        if( bestlmid >= 0 ) {
+        if (bestlmid >= 0)
+        {
             map_previd_newid.emplace(kpid, bestlmid);
         }
     }
@@ -773,20 +847,19 @@ std::map<int,int> Mapper::matchToMap(const Frame &frame, const float fmaxprojerr
     return map_previd_newid;
 }
 
-
 void Mapper::runFullBA()
 {
     bool use_robust_cost = true;
     pestimator_->poptimizer_->fullBA(use_robust_cost);
 }
 
-
 bool Mapper::getNewKf(Keyframe &kf)
 {
     std::lock_guard<std::mutex> lock(qkf_mutex_);
 
     // Check if new KF is available
-    if( qkfs_.empty() ) {
+    if (qkfs_.empty())
+    {
         bnewkfavailable_ = false;
         return false;
     }
@@ -799,15 +872,17 @@ bool Mapper::getNewKf(Keyframe &kf)
     // Setting bnewkfavailable_ to true will limit
     // the processing of the KF to triangulation and postpone
     // other costly tasks to next KF as we are running late!
-    if( qkfs_.empty() ) {
+    if (qkfs_.empty())
+    {
         bnewkfavailable_ = false;
-    } else {
+    }
+    else
+    {
         bnewkfavailable_ = true;
     }
 
     return true;
 }
-
 
 void Mapper::addNewKf(const Keyframe &kf)
 {
@@ -824,7 +899,7 @@ void Mapper::reset()
 
     bnewkfavailable_ = false;
     bwaiting_for_lc_ = false;
-    bexit_required_ = false; 
+    bexit_required_ = false;
 
     std::queue<Keyframe> empty;
     std::swap(qkfs_, empty);

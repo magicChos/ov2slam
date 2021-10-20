@@ -25,7 +25,6 @@
 */
 #pragma once
 
-
 #include <queue>
 #include <vector>
 #include <unordered_set>
@@ -36,55 +35,56 @@
 #include "estimator.hpp"
 #include "loop_closer.hpp"
 
-struct Keyframe {
+struct Keyframe
+{
     int kfid_;
     cv::Mat imleft_, imright_;
     cv::Mat imleftraw_, imrightraw_;
     std::vector<cv::Mat> vpyr_imleft_, vpyr_imright_;
     bool is_stereo_;
-    
+
     Keyframe()
         : kfid_(-1), is_stereo_(false)
-    {}
+    {
+    }
 
-    Keyframe(int kfid, const cv::Mat &imleftraw) 
+    Keyframe(int kfid, const cv::Mat &imleftraw)
         : kfid_(kfid), imleftraw_(imleftraw.clone()), is_stereo_(false)
-    {}
+    {
+    }
 
+    Keyframe(int kfid, const cv::Mat &imleftraw, const std::vector<cv::Mat> &vpyrleft,
+             const std::vector<cv::Mat> &vpyrright)
+        : kfid_(kfid), imleftraw_(imleftraw.clone()), vpyr_imleft_(vpyrleft), vpyr_imright_(vpyrright), is_stereo_(true)
+    {
+    }
 
-    Keyframe(int kfid, const cv::Mat &imleftraw, const std::vector<cv::Mat> &vpyrleft, 
-        const std::vector<cv::Mat> &vpyrright )
-        : kfid_(kfid), imleftraw_(imleftraw.clone()) 
-        , vpyr_imleft_(vpyrleft), vpyr_imright_(vpyrright)
-        , is_stereo_(true)
-    {}
+    Keyframe(int kfid, const cv::Mat &imleftraw, const cv::Mat &imrightraw,
+             const std::vector<cv::Mat> &vpyrleft)
+        : kfid_(kfid), imleftraw_(imleftraw.clone()), imrightraw_(imrightraw.clone()), vpyr_imleft_(vpyrleft)
+    {
+    }
 
-    Keyframe(int kfid, const cv::Mat &imleftraw, const cv::Mat &imrightraw, 
-        const std::vector<cv::Mat> &vpyrleft
-         )
-        : kfid_(kfid)
-        , imleftraw_(imleftraw.clone())
-        , imrightraw_(imrightraw.clone())
-        , vpyr_imleft_(vpyrleft)
-    {}
+    void displayInfo()
+    {
+        std::cout << "\n\n Keyframe struct object !  Info : id #" << kfid_ << " - is stereo : " << is_stereo_;
+        std::cout << " - imleft size : " << imleft_.size << " - imright size : " << imright_.size;
+        std::cout << " - pyr left size : " << vpyr_imleft_.size() << " - pyr right size : " << vpyr_imright_.size() << "\n\n";
+    }
 
-     void displayInfo() {
-         std::cout << "\n\n Keyframe struct object !  Info : id #" << kfid_ << " - is stereo : " << is_stereo_;
-         std::cout << " - imleft size : " << imleft_.size << " - imright size : " << imright_.size;
-         std::cout << " - pyr left size : " << vpyr_imleft_.size() << " - pyr right size : " << vpyr_imright_.size() << "\n\n";
-     }
-
-     void releaseImages() {
-         imleft_.release();
-         imright_.release();
-         imleftraw_.release();
-         imrightraw_.release();
-         vpyr_imleft_.clear();
-         vpyr_imright_.clear();
-     }
+    void releaseImages()
+    {
+        imleft_.release();
+        imright_.release();
+        imleftraw_.release();
+        imrightraw_.release();
+        vpyr_imleft_.clear();
+        vpyr_imright_.clear();
+    }
 };
 
-class Mapper {
+class Mapper
+{
 
 public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
@@ -95,10 +95,10 @@ public:
     void run();
 
     bool matchingToLocalMap(Frame &frame);
-    std::map<int,int> matchToMap(const Frame &frame, const float fmaxprojerr, const float fdistratio, std::unordered_set<int> &set_local_lmids);
-    void mergeMatches(const Frame &frame, const std::map<int,int> &map_kpids_lmids);
-    bool p3pRansac(const Frame &frame, const std::map<int,int>& map_kpids_lmids, Sophus::SE3d &Twc, std::vector<int> &voutlier_ids);
-    bool computePnP(const Frame &frame, const std::map<int,int>& map_kpids_lmids, Sophus::SE3d &Twc, std::vector<int> &voutlier_ids);
+    std::map<int, int> matchToMap(const Frame &frame, const float fmaxprojerr, const float fdistratio, std::unordered_set<int> &set_local_lmids);
+    void mergeMatches(const Frame &frame, const std::map<int, int> &map_kpids_lmids);
+    bool p3pRansac(const Frame &frame, const std::map<int, int> &map_kpids_lmids, Sophus::SE3d &Twc, std::vector<int> &voutlier_ids);
+    bool computePnP(const Frame &frame, const std::map<int, int> &map_kpids_lmids, Sophus::SE3d &Twc, std::vector<int> &voutlier_ids);
 
     void triangulate(Frame &frame);
     void triangulateTemporal(Frame &frame);
@@ -110,7 +110,7 @@ public:
 
     void runFullBA();
 
-    void runFullPoseGraph(std::vector<double*> &vtwc, std::vector<double*> &vqwc, std::vector<double*> &vtprevcur, std::vector<double*> &vqprevcur, std::vector<bool> &viskf);
+    void runFullPoseGraph(std::vector<double *> &vtwc, std::vector<double *> &vqwc, std::vector<double *> &vtprevcur, std::vector<double *> &vqprevcur, std::vector<bool> &viskf);
 
     bool getNewKf(Keyframe &kf);
     void addNewKf(const Keyframe &kf);
@@ -126,7 +126,7 @@ public:
 
     bool bnewkfavailable_ = false;
     bool bwaiting_for_lc_ = false;
-    bool bexit_required_ = false; 
+    bool bexit_required_ = false;
 
     std::queue<Keyframe> qkfs_;
 

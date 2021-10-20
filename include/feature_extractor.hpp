@@ -32,6 +32,7 @@ class FeatureExtractor {
 
 public:
     FeatureExtractor() {};
+
     FeatureExtractor(size_t nmaxpts, size_t nmaxdist, double dmaxquality, int nfast_th);
 
     std::vector<cv::Point2f> detectGFTT(const cv::Mat &im, const std::vector<cv::Point2f> &vcurkps,

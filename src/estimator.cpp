@@ -28,58 +28,64 @@
 
 #include "estimator.hpp"
 
-
 void Estimator::run()
 {
     std::cout << "\n Estimator is ready to process Keyframes!\n";
-    
-    while( !bexit_required_ ) {
 
-        if( getNewKf() ) 
+    while (!bexit_required_)
+    {
+
+        if (getNewKf())
         {
-            if( pslamstate_->slam_mode_ ) 
+            if (pslamstate_->slam_mode_)
             {
-                if( pslamstate_->debug_ )
+                if (pslamstate_->debug_)
                     std::cout << "\n [Estimator] Slam-Mode - Processing new KF #" << pnewkf_->kfid_;
 
+                // local BA
                 applyLocalBA();
-
+                // map filter
                 mapFiltering();
-
-            } else {
-                if( pslamstate_->debug_ )
+            }
+            else
+            {
+                if (pslamstate_->debug_)
                     std::cout << "\nNO OPITMIZATION (NEITHER SLAM MODE NOR SW MODE SELECTED) !\n";
             }
-        } else {
+        }
+        else
+        {
             std::chrono::microseconds dura(20);
             std::this_thread::sleep_for(dura);
         }
     }
 
     poptimizer_->signalStopLocalBA();
-    
+
     std::lock_guard<std::mutex> lock2(pmap_->optim_mutex_);
 
     std::cout << "\n Estimator thread is exiting.\n";
 }
 
-
 void Estimator::applyLocalBA()
 {
     int nmincstkfs = 1;
-    if( pslamstate_->mono_ ) {
+    if (pslamstate_->mono_)
+    {
         nmincstkfs = 2;
     }
 
-    if( pnewkf_->kfid_ < nmincstkfs ) {
+    if (pnewkf_->kfid_ < nmincstkfs)
+    {
         return;
     }
 
-    if( pnewkf_->nb3dkps_ == 0 ) {
+    if (pnewkf_->nb3dkps_ == 0)
+    {
         return;
     }
 
-    if( pslamstate_->debug_ || pslamstate_->log_timings_ )
+    if (pslamstate_->debug_ || pslamstate_->log_timings_)
         Profiler::Start("1.BA_localBA");
 
     std::lock_guard<std::mutex> lock2(pmap_->optim_mutex_);
@@ -92,50 +98,57 @@ void Estimator::applyLocalBA()
 
     // We signal that Estimator is stopping BA
     pslamstate_->blocalba_is_on_ = false;
-    
-    if( pslamstate_->debug_ || pslamstate_->log_timings_ )
+
+    if (pslamstate_->debug_ || pslamstate_->log_timings_)
         Profiler::StopAndDisplay(pslamstate_->debug_, "1.BA_localBA");
 }
 
-
 void Estimator::mapFiltering()
 {
-    if( pslamstate_->fkf_filtering_ratio_ >= 1. ) {
+    if (pslamstate_->fkf_filtering_ratio_ >= 1.)
+    {
         return;
     }
-    
-    if( pnewkf_->kfid_ < 20 || pslamstate_->blc_is_on_ ) {
-        return;
-    }   
 
-    if( pslamstate_->debug_ || pslamstate_->log_timings_ )
+    if (pnewkf_->kfid_ < 20 || pslamstate_->blc_is_on_)
+    {
+        return;
+    }
+
+    if (pslamstate_->debug_ || pslamstate_->log_timings_)
         Profiler::Start("1.BA_map-filtering");
-        
+
     auto covkf_map = pnewkf_->getCovisibleKfMap();
 
-    for( auto it = covkf_map.rbegin() ; it != covkf_map.rend() ; it++ ) {
+    for (auto it = covkf_map.rbegin(); it != covkf_map.rend(); it++)
+    {
 
         int kfid = it->first;
 
-        if( bnewkfavailable_ || kfid == 0 ) {
+        if (bnewkfavailable_ || kfid == 0)
+        {
             break;
         }
 
-        if( kfid >= pnewkf_->kfid_ ) {
+        if (kfid >= pnewkf_->kfid_)
+        {
             continue;
         }
 
         // Only useful if LC enabled
-        if( pslamstate_->lckfid_ == kfid ) {
+        if (pslamstate_->lckfid_ == kfid)
+        {
             continue;
         }
 
         auto pkf = pmap_->getKeyframe(kfid);
-        if( pkf == nullptr ) {
+        if (pkf == nullptr)
+        {
             pnewkf_->removeCovisibleKf(kfid);
             continue;
-        } 
-        else if( (int)pkf->nb3dkps_ < pslamstate_->nmin_covscore_ / 2 ) {
+        }
+        else if ((int)pkf->nb3dkps_ < pslamstate_->nmin_covscore_ / 2)
+        {
             std::lock_guard<std::mutex> lock(pmap_->map_mutex_);
             pmap_->removeKeyframe(kfid);
             continue;
@@ -143,34 +156,41 @@ void Estimator::mapFiltering()
 
         size_t nbgoodobs = 0;
         size_t nbtot = 0;
-        for( const auto &kp : pkf->getKeypoints3d() )
+        for (const auto &kp : pkf->getKeypoints3d())
         {
             auto plm = pmap_->getMapPoint(kp.lmid_);
-            if( plm == nullptr ) {
+            if (plm == nullptr)
+            {
                 pmap_->removeMapPointObs(kp.lmid_, kfid);
                 continue;
-            } 
-            else if( plm->isBad() ) {
+            }
+            else if (plm->isBad())
+            {
                 continue;
             }
-            else {
+            else
+            {
                 size_t nbcokfs = plm->getKfObsSet().size();
-                if( nbcokfs > 4 ) {
+                if (nbcokfs > 4)
+                {
                     nbgoodobs++;
                 }
-            } 
-            
+            }
+
             nbtot++;
-            
-            if( bnewkfavailable_ ) {
+
+            if (bnewkfavailable_)
+            {
                 break;
             }
         }
         float ratio = (float)nbgoodobs / nbtot;
-        if( ratio > pslamstate_->fkf_filtering_ratio_ ) {
+        if (ratio > pslamstate_->fkf_filtering_ratio_)
+        {
 
             // Only useful if LC enabled
-            if( pslamstate_->lckfid_ == kfid ) {
+            if (pslamstate_->lckfid_ == kfid)
+            {
                 continue;
             }
             std::lock_guard<std::mutex> lock(pmap_->map_mutex_);
@@ -178,7 +198,7 @@ void Estimator::mapFiltering()
         }
     }
 
-    if( pslamstate_->debug_ || pslamstate_->log_timings_ )
+    if (pslamstate_->debug_ || pslamstate_->log_timings_)
         Profiler::StopAndDisplay(pslamstate_->debug_, "1.BA_map-filtering");
 }
 
@@ -187,7 +207,8 @@ bool Estimator::getNewKf()
     std::lock_guard<std::mutex> lock(qkf_mutex_);
 
     // Check if new KF is available
-    if( qpkfs_.empty() ) {
+    if (qpkfs_.empty())
+    {
         bnewkfavailable_ = false;
         return false;
     }
@@ -197,26 +218,28 @@ bool Estimator::getNewKf()
     // to make sure that they are all optimized
     std::vector<int> vkfids;
     vkfids.reserve(qpkfs_.size());
-    while( qpkfs_.size() > 1 ) {
+    while (qpkfs_.size() > 1)
+    {
         qpkfs_.pop();
         vkfids.push_back(pnewkf_->kfid_);
     }
     pnewkf_ = qpkfs_.front();
     qpkfs_.pop();
 
-    if( !vkfids.empty() ) {
-        for( const auto &kfid : vkfids ) {
+    if (!vkfids.empty())
+    {
+        for (const auto &kfid : vkfids)
+        {
             pnewkf_->map_covkfs_[kfid] = pnewkf_->nb3dkps_;
         }
 
-        if( pslamstate_->debug_ )
+        if (pslamstate_->debug_)
             std::cout << "\n ESTIMATOR is late!  Adding several KFs to BA...\n";
     }
     bnewkfavailable_ = false;
 
     return true;
 }
-
 
 void Estimator::addNewKf(const std::shared_ptr<Frame> &pkf)
 {
@@ -225,8 +248,7 @@ void Estimator::addNewKf(const std::shared_ptr<Frame> &pkf)
     bnewkfavailable_ = true;
 
     // We signal that a new KF is ready
-    if( pslamstate_->blocalba_is_on_ 
-        && !poptimizer_->stopLocalBA() ) 
+    if (pslamstate_->blocalba_is_on_ && !poptimizer_->stopLocalBA())
     {
         poptimizer_->signalStopLocalBA();
     }
@@ -237,7 +259,7 @@ void Estimator::reset()
     std::lock_guard<std::mutex> lock2(pmap_->optim_mutex_);
 
     bnewkfavailable_ = false;
-    bexit_required_ = false; 
+    bexit_required_ = false;
 
     std::queue<std::shared_ptr<Frame>> empty;
     std::swap(qpkfs_, empty);

@@ -87,7 +87,8 @@ public:
     bool bframe_viz_ison_ = false;
     bool bkf_viz_ison_ = false;
 
-    std::shared_ptr<SlamParams> pslamstate_;
+    //slam相关参数对象
+    std::shared_ptr<SlamParams> pslamstate_; 
     std::shared_ptr<RosVisualizer> prosviz_;
 
     std::shared_ptr<CameraCalibration> pcalib_model_left_;
@@ -95,9 +96,12 @@ public:
 
     std::shared_ptr<Frame> pcurframe_;
 
+    // 地图管理对象
     std::shared_ptr<MapManager> pmap_;
 
     std::unique_ptr<VisualFrontEnd> pvisualfrontend_;
+
+    // mapper对象
     std::unique_ptr<Mapper> pmapper_;
 
     std::shared_ptr<FeatureExtractor> pfeatextract_;
