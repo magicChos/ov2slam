@@ -62,6 +62,7 @@ bool VisualFrontEnd::visualTracking(cv::Mat &iml, double time)
 
 
 // Perform tracking in one image, update kps and MP obs, return true if a new KF is req.
+// 运行tracking，更新kps和MP obs，如果需要一个新的KF返回true
 bool VisualFrontEnd::trackMono(cv::Mat &im, double time)
 {
     if( pslamstate_->debug_ )

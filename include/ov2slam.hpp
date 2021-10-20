@@ -94,6 +94,7 @@ public:
     std::shared_ptr<CameraCalibration> pcalib_model_left_;
     std::shared_ptr<CameraCalibration> pcalib_model_right_;
 
+    // 当前帧
     std::shared_ptr<Frame> pcurframe_;
 
     // 地图管理对象

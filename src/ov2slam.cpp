@@ -105,6 +105,7 @@ SlamManager::SlamManager(std::shared_ptr<SlamParams> pstate, std::shared_ptr<Ros
     pmap_.reset(new MapManager(pslamstate_, pcurframe_, pfeatextract_, ptracker_));
 
     // Visual Front-End processes every incoming frames
+    // 视觉前端
     pvisualfrontend_.reset(new VisualFrontEnd(pslamstate_, pcurframe_,
                                               pmap_, ptracker_));
 

@@ -45,6 +45,7 @@ public:
         {
             // Provided Twc and prevTwc should be equal here
             // as prevTwc is updated right after pose computation
+            // 提供的Twc和prevTwc在这里应该相等，因为preTwc在位姿计算完后立即更新
             if( !(Twc * prevTwc_.inverse()).log().isZero(1.e-5) )
             {
                 // Might happen in case of LC!
@@ -126,10 +127,13 @@ public:
     void resetFrame();
     void reset();
 
+    // slam相关的参数
     std::shared_ptr<SlamParams> pslamstate_;
+    // 当前帧
     std::shared_ptr<Frame> pcurframe_;
+    // 地图管理对象
     std::shared_ptr<MapManager> pmap_;
-
+    // 特征跟踪对象
     std::shared_ptr<FeatureTracker> ptracker_;
 
     cv::Mat left_raw_img_;
@@ -137,6 +141,7 @@ public:
     std::vector<cv::Mat> cur_pyr_, prev_pyr_;
     std::vector<cv::Mat> kf_pyr_;
     
+    // 运动模型对象
     MotionModel motion_model_;
 
     bool bp3preq_ = false; 
